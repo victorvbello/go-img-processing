@@ -11,9 +11,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/nfnt/resize"
+	"github.com/victorvbello/img-processing/experiment"
 	"github.com/victorvbello/img-processing/pixelextract"
 )
 
@@ -159,7 +161,7 @@ func (fi *FilterImg) GreyScale(id int) {
 }
 
 func (fi *FilterImg) ByteScaleTxtFile(id int) string {
-	var currentY int
+	var currentY int = -1
 	outFile, _ := os.Create(fi.alias + "_byte.txt")
 	s := time.Now()
 	for _, p := range fi.xp {
@@ -190,6 +192,46 @@ func (fi *FilterImg) ByteScaleTxtFile(id int) string {
 	return filepath.Join(path, outFile.Name())
 }
 
+func (fi *FilterImg) CharacterScaleTxtFile(id int, chartInfo experiment.CharacterInfo) string {
+	var currentY int = -1
+	outFile, _ := os.Create(fi.alias + "_character.txt")
+	s := time.Now()
+	maxColorValue := (65535 + 65535 + 65535 + 65535)
+	for _, p := range fi.xp {
+		pixelGrayScaleWight := p.ColorGrayScaleWeight() * uint32(chartInfo.BaseWidth*chartInfo.BaseWidth)
+		whitePercentage := float32(pixelGrayScaleWight*100) / float32(maxColorValue)
+		charIndex := int(whitePercentage)
+
+		if charIndex >= len(chartInfo.CharacterData) {
+			err := fmt.Errorf("charIndex: %d, not fount in characterData", charIndex)
+			log.Fatal(err)
+			fi.log <- err.Error()
+		}
+		defaultSpace := "  "
+		currentValue := defaultSpace + chartInfo.CharacterData[charIndex].Char + defaultSpace
+		if currentY != p.Y {
+			currentY = p.Y
+			if _, err := outFile.Write([]byte("\n" + currentValue)); err != nil {
+				log.Fatal(err)
+				fi.log <- err.Error()
+			}
+			continue
+		}
+		if _, err := outFile.Write([]byte(currentValue)); err != nil {
+			log.Fatal(err)
+			fi.log <- err.Error()
+		}
+	}
+	outFile.Close()
+	e := time.Since(s)
+	fi.log <- fmt.Sprintf("character-scale, task: %d total create txt => %v", id, e)
+	path, err := os.Getwd()
+	if err != nil {
+		fi.log <- fmt.Sprintf("character-scale, task: %d error %v", id, err)
+	}
+	return filepath.Join(path, outFile.Name())
+}
+
 func (fi *FilterImg) Resize(id int, scale uint) *FilterImg {
 	bounds := fi.Bounds()
 	width := uint(bounds.Max.X)
@@ -203,18 +245,18 @@ func (fi *FilterImg) Resize(id int, scale uint) *FilterImg {
 	return newFi
 }
 
-func (fi *FilterImg) MakeFromTxtFile(id int, txtFilePath string) {
+func (fi *FilterImg) MakeFromTxtFile(id int, alias string, txtFilePath string, fontsiZe int, typeface string) {
 	s := time.Now()
 	bounds := fi.Bounds()
 	width, height := bounds.Max.X, bounds.Max.Y
 	basePath := filepath.Dir(txtFilePath)
 	txtFileName := filepath.Base(txtFilePath)
-	resultFileName := fi.alias + "_byte.jpg"
+	resultFileName := fi.alias + "_" + alias + ".jpeg"
 	cmd := exec.Command("convert",
 		"-size", fmt.Sprintf("%dx%d", width*2, (height*2)-(20*height)/100), "xc:white",
-		"-font", "Times-Roman",
+		"-font", typeface,
 		"-gravity", "Center",
-		"-pointsize", "11",
+		"-pointsize", strconv.Itoa(fontsiZe),
 		"-fill", "black",
 		"-annotate", "+15+15",
 		"@"+txtFileName,
@@ -228,14 +270,14 @@ func (fi *FilterImg) MakeFromTxtFile(id int, txtFilePath string) {
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		fi.log <- fmt.Sprintf("byte-scale-make, task: %d error %v", id, err)
+		fi.log <- fmt.Sprintf(alias+"-scale-make, task: %d error %v", id, err)
 		return
 	}
+	fi.log <- fmt.Sprintf(alias+"-scale-make, task: %d flow output => [%v]", id, out.String())
 	e := time.Since(s)
-	fi.log <- fmt.Sprintf("byte-scale-make, task: %d total create img => %v", id, e)
-	fi.log <- fmt.Sprintf("byte-scale-make, task: %d flow output => [%v]", id, out.String())
+	fi.log <- fmt.Sprintf(alias+"-scale-make, task: %d total create img => %v", id, e)
 	err = os.Remove(txtFileName)
 	if err != nil {
-		fi.log <- fmt.Sprintf("byte-scale-make, task: %d error %v", id, err)
+		fi.log <- fmt.Sprintf(alias+"-scale-make, task: %d error %v", id, err)
 	}
 }
