@@ -17,6 +17,7 @@ github.com/urfave/cli/v2
 ## explicit; go 1.12
 golang.org/x/image/font
 golang.org/x/image/font/basicfont
+golang.org/x/image/font/inconsolata
 golang.org/x/image/math/fixed
 # gopkg.in/go-playground/colors.v1 v1.2.0
 ## explicit

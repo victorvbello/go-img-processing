@@ -1,22 +1,22 @@
 package imagefilter
 
 import (
-	"bytes"
+	"bufio"
 	"fmt"
 	"image"
 	"image/color"
-	"image/jpeg"
+	"image/draw"
 	"log"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/nfnt/resize"
-	"github.com/victorvbello/img-processing/experiment"
 	"github.com/victorvbello/img-processing/pixelextract"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/inconsolata"
+	"golang.org/x/image/math/fixed"
 )
 
 type FilterImg struct {
@@ -72,23 +72,28 @@ func (fi *FilterImg) At(x, y int) color.Color {
 	return fi.Image.At(x, y)
 }
 
-func (fi *FilterImg) RandomColor(id int) {
-	for _, p := range fi.xp {
-		cr, cg, cb, ca := p.ColorRGBA.RGBA()
-		fi.Set(p.Y, p.X, changeColorRgba(cr, cg, cb, ca, fi.Factor))
-	}
-
-	sc := time.Now()
-	outFile, _ := os.Create(fmt.Sprintf("%s_random_%d.jpg", fi.alias, fi.Factor))
-	ec := time.Since(sc)
-	defer outFile.Close()
-	s := time.Now()
-	jpeg.Encode(outFile, fi, nil)
-	e := time.Since(s)
-	fi.log <- fmt.Sprintf("random-color, task: %d total create new => %v \t total encode => %v", id, ec, e)
+func (fi *FilterImg) GetAlias() string {
+	return fi.alias
 }
 
-func (fi *FilterImg) RandomRed(id int) {
+func (fi *FilterImg) GetXp() []pixelextract.PixelColor {
+	return fi.xp
+}
+
+func (fi *FilterImg) AddLog(l string) {
+	fi.log <- l
+}
+
+func (fi *FilterImg) RandomColor(id int) image.Image {
+	for _, p := range fi.xp {
+		cr, cg, cb, ca := p.ColorRGBA.RGBA()
+		fi.Set(p.X, p.Y, changeColorRgba(cr, cg, cb, ca, fi.Factor))
+	}
+
+	return fi
+}
+
+func (fi *FilterImg) RandomRed(id int) image.Image {
 	for _, p := range fi.xp {
 		_, cg, cb, ca := p.ColorRGBA.RGBA()
 		if (p.X+p.Y)%2 == 0 {
@@ -96,17 +101,10 @@ func (fi *FilterImg) RandomRed(id int) {
 		}
 	}
 
-	sc := time.Now()
-	outFile, _ := os.Create(fmt.Sprintf("%s_red_%d.jpg", fi.alias, fi.Factor))
-	ec := time.Since(sc)
-	defer outFile.Close()
-	s := time.Now()
-	jpeg.Encode(outFile, fi, nil)
-	e := time.Since(s)
-	fi.log <- fmt.Sprintf("random-red, task: %d total create new => %v \t total encode => %v", id, ec, e)
+	return fi
 }
 
-func (fi *FilterImg) RandomGreen(id int) {
+func (fi *FilterImg) RandomGreen(id int) image.Image {
 	for _, p := range fi.xp {
 		cr, _, cb, ca := p.ColorRGBA.RGBA()
 		if (p.X+p.Y)%2 == 0 {
@@ -114,17 +112,10 @@ func (fi *FilterImg) RandomGreen(id int) {
 		}
 	}
 
-	sc := time.Now()
-	outFile, _ := os.Create(fmt.Sprintf("%s_green_%d.jpg", fi.alias, fi.Factor))
-	ec := time.Since(sc)
-	defer outFile.Close()
-	s := time.Now()
-	jpeg.Encode(outFile, fi, nil)
-	e := time.Since(s)
-	fi.log <- fmt.Sprintf("random-green, task: %d total create new => %v \t total encode => %v", id, ec, e)
+	return fi
 }
 
-func (fi *FilterImg) RandomBlue(id int) {
+func (fi *FilterImg) RandomBlue(id int) image.Image {
 	for _, p := range fi.xp {
 		cr, cg, _, ca := p.ColorRGBA.RGBA()
 		if (p.X+p.Y)%2 == 0 {
@@ -132,32 +123,17 @@ func (fi *FilterImg) RandomBlue(id int) {
 		}
 	}
 
-	sc := time.Now()
-	outFile, _ := os.Create(fmt.Sprintf("%s_blue_%d.jpg", fi.alias, fi.Factor))
-	ec := time.Since(sc)
-	defer outFile.Close()
-	s := time.Now()
-	jpeg.Encode(outFile, fi, nil)
-	e := time.Since(s)
-	fi.log <- fmt.Sprintf("random-blue, task: %d total create new => %v \t total encode => %v", id, ec, e)
+	return fi
 }
 
-func (fi *FilterImg) GreyScale(id int) {
+func (fi *FilterImg) GreyScale(id int) image.Image {
 	for _, p := range fi.xp {
 		cr, cg, cb, _ := p.ColorRGBA.RGBA()
 		avg := 0.2125*float64(cr) + 0.7154*float64(cg) + 0.0721*float64(cb)
 		grayColor := color.Gray{uint8(math.Ceil(avg))}
 		fi.Set(p.X, p.Y, grayColor)
 	}
-
-	sc := time.Now()
-	outFile, _ := os.Create(fi.alias + "_grey.jpg")
-	ec := time.Since(sc)
-	defer outFile.Close()
-	s := time.Now()
-	jpeg.Encode(outFile, fi, nil)
-	e := time.Since(s)
-	fi.log <- fmt.Sprintf("random-grey, task: %d total create new => %v \t total encode => %v", id, ec, e)
+	return fi
 }
 
 func (fi *FilterImg) ByteScaleTxtFile(id int) string {
@@ -165,9 +141,9 @@ func (fi *FilterImg) ByteScaleTxtFile(id int) string {
 	outFile, _ := os.Create(fi.alias + "_byte.txt")
 	s := time.Now()
 	for _, p := range fi.xp {
-		currentValue := " 0 "
+		currentValue := "0"
 		if p.IsLight {
-			currentValue = " 1 "
+			currentValue = "1"
 		}
 		if currentY != p.Y {
 			currentY = p.Y
@@ -192,46 +168,6 @@ func (fi *FilterImg) ByteScaleTxtFile(id int) string {
 	return filepath.Join(path, outFile.Name())
 }
 
-func (fi *FilterImg) CharacterScaleTxtFile(id int, chartInfo experiment.CharacterInfo) string {
-	var currentY int = -1
-	outFile, _ := os.Create(fi.alias + "_character.txt")
-	s := time.Now()
-	maxColorValue := (65535 + 65535 + 65535 + 65535)
-	for _, p := range fi.xp {
-		pixelGrayScaleWight := p.ColorGrayScaleWeight() * uint32(chartInfo.BaseWidth*chartInfo.BaseWidth)
-		whitePercentage := float32(pixelGrayScaleWight*100) / float32(maxColorValue)
-		charIndex := int(whitePercentage)
-
-		if charIndex >= len(chartInfo.CharacterData) {
-			err := fmt.Errorf("charIndex: %d, not fount in characterData", charIndex)
-			log.Fatal(err)
-			fi.log <- err.Error()
-		}
-		defaultSpace := "  "
-		currentValue := defaultSpace + chartInfo.CharacterData[charIndex].Char + defaultSpace
-		if currentY != p.Y {
-			currentY = p.Y
-			if _, err := outFile.Write([]byte("\n" + currentValue)); err != nil {
-				log.Fatal(err)
-				fi.log <- err.Error()
-			}
-			continue
-		}
-		if _, err := outFile.Write([]byte(currentValue)); err != nil {
-			log.Fatal(err)
-			fi.log <- err.Error()
-		}
-	}
-	outFile.Close()
-	e := time.Since(s)
-	fi.log <- fmt.Sprintf("character-scale, task: %d total create txt => %v", id, e)
-	path, err := os.Getwd()
-	if err != nil {
-		fi.log <- fmt.Sprintf("character-scale, task: %d error %v", id, err)
-	}
-	return filepath.Join(path, outFile.Name())
-}
-
 func (fi *FilterImg) Resize(id int, scale uint) *FilterImg {
 	bounds := fi.Bounds()
 	width := uint(bounds.Max.X)
@@ -245,39 +181,57 @@ func (fi *FilterImg) Resize(id int, scale uint) *FilterImg {
 	return newFi
 }
 
-func (fi *FilterImg) MakeFromTxtFile(id int, alias string, txtFilePath string, fontsiZe int, typeface string) {
-	s := time.Now()
+func (fi *FilterImg) MakeFromTxtFile(txtFilePath string) (image.Image, error) {
 	bounds := fi.Bounds()
 	width, height := bounds.Max.X, bounds.Max.Y
-	basePath := filepath.Dir(txtFilePath)
-	txtFileName := filepath.Base(txtFilePath)
-	resultFileName := fi.alias + "_" + alias + ".jpeg"
-	cmd := exec.Command("convert",
-		"-size", fmt.Sprintf("%dx%d", width*2, (height*2)-(20*height)/100), "xc:white",
-		"-font", typeface,
-		"-gravity", "Center",
-		"-pointsize", strconv.Itoa(fontsiZe),
-		"-fill", "black",
-		"-annotate", "+15+15",
-		"@"+txtFileName,
-		resultFileName,
-	)
+	img := image.NewRGBA(image.Rect(0, 0, width+((20*width)/100), height+((24*height)/100)))
 
-	cmd.Dir = basePath
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.White}, image.ZP, draw.Src)
+
+	x, y := 10, 10
+	col := color.Black
+
+	f, err := os.Open(txtFilePath)
 	if err != nil {
-		fi.log <- fmt.Sprintf(alias+"-scale-make, task: %d error %v", id, err)
-		return
+		return nil, err
 	}
-	fi.log <- fmt.Sprintf(alias+"-scale-make, task: %d flow output => [%v]", id, out.String())
-	e := time.Since(s)
-	fi.log <- fmt.Sprintf(alias+"-scale-make, task: %d total create img => %v", id, e)
-	err = os.Remove(txtFileName)
+
+	scanner := bufio.NewScanner(f)
+	scanner.Split(bufio.ScanLines)
+
+	for scanner.Scan() {
+		point := fixed.Point26_6{X: fixed.Int26_6(x), Y: fixed.Int26_6(y * 44)}
+		d := font.Drawer{
+			Dst:  img,
+			Src:  image.NewUniform(col),
+			Face: inconsolata.Bold8x16,
+			Dot:  point,
+		}
+		d.DrawString(scanner.Text())
+		y += 12
+	}
+	f.Close()
+	err = os.Remove(txtFilePath)
 	if err != nil {
-		fi.log <- fmt.Sprintf(alias+"-scale-make, task: %d error %v", id, err)
+		return nil, err
 	}
+	return img, nil
+}
+
+func (fi *FilterImg) Transparency(alpha uint8) image.Image {
+	bounds := fi.Bounds()
+	width, height := bounds.Max.X, bounds.Max.Y
+	resultImg := image.NewRGBA(bounds)
+	mask := image.NewAlpha(bounds)
+	bg := image.NewRGBA(bounds)
+	for x := 0; x < width; x++ {
+		for y := 0; y < height; y++ {
+			bg.Set(x, y, image.White)
+			mask.SetAlpha(x, y, color.Alpha{alpha})
+		}
+	}
+	draw.Draw(resultImg, bounds, bg, image.ZP, draw.Src)
+	draw.DrawMask(resultImg, bounds, fi, image.ZP, mask, image.ZP, draw.Over)
+	fi.Image = resultImg
+	return resultImg
 }

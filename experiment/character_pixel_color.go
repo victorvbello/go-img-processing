@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/png"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
+	"time"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
 
+	"github.com/victorvbello/img-processing/imagefilter"
 	"github.com/victorvbello/img-processing/pixelextract"
 )
 
@@ -26,18 +28,58 @@ type CharacterInfo struct {
 	BaseHeight    int
 	CharacterData []CharacterMetadata
 }
-
 type CharacterMetadata struct {
-	Char            string
-	Filename        string
-	WhitePercentage float32
+	Char           string
+	Filename       string
+	GrayPercentage float32
 }
 
-type byWhitePercentage []CharacterMetadata
+type byGrayPercentage []CharacterMetadata
 
-func (wp byWhitePercentage) Len() int           { return len(wp) }
-func (wp byWhitePercentage) Swap(i, j int)      { wp[i], wp[j] = wp[j], wp[i] }
-func (wp byWhitePercentage) Less(i, j int) bool { return wp[i].WhitePercentage > wp[j].WhitePercentage } // DESC
+func (wp byGrayPercentage) Len() int           { return len(wp) }
+func (wp byGrayPercentage) Swap(i, j int)      { wp[i], wp[j] = wp[j], wp[i] }
+func (wp byGrayPercentage) Less(i, j int) bool { return wp[i].GrayPercentage > wp[j].GrayPercentage } // DESC
+
+const MAX_COLOR_VALUE = 255
+
+func makeCharanterImg(basePath string, alias string, char string, width int, height int) (string, error) {
+	finalImgName := basePath + alias + "_" + char + ".png"
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	x, y := 2, 10
+	col := color.Black
+
+	point := fixed.Point26_6{X: fixed.Int26_6(x * 64), Y: fixed.Int26_6(y * 64)}
+
+	d := &font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(col),
+		Face: basicfont.Face7x13,
+		Dot:  point,
+	}
+	d.DrawString(char)
+
+	_, err := imagefilter.EncodeIMG(img, finalImgName)
+	if err != nil {
+		return "", err
+	}
+	return finalImgName, nil
+}
+
+func characterColorGrayScaleWeight(xp []pixelextract.PixelColor) uint32 {
+	var weight uint32
+	for _, p := range xp {
+		weight += p.ColorGrayScale()
+	}
+	return weight
+}
+
+func characterColorWeight(xp []pixelextract.PixelColor) uint32 {
+	var weight uint32
+	for _, p := range xp {
+		weight += p.ColorWeight()
+	}
+	return weight
+}
 
 func CharacterPixelTypeCountMakeFile(s string) {
 	var wg sync.WaitGroup
@@ -70,18 +112,19 @@ func CharacterPixelTypeCountMakeFile(s string) {
 	for l := range logger {
 		fmt.Println(l)
 	}
-	maxColorValue := 255 * baseWidth * baseHeight //R+G+B+A * (wight * height)
+	maxColorValue := MAX_COLOR_VALUE * baseWidth * baseHeight
 	colorFactor := float32(maxColorValue / len(s))
 	for i := 0; i < len(s); i++ {
 		fileData := <-fileNameList
-		xp, _, err := pixelextract.ExtractPixelFromFilePNG(fileData.Filename)
+		img, err := imagefilter.DecodeImg(fileData.Filename)
 		if err != nil {
-			log.Fatal(fmt.Errorf("extract-pixel-from-file %w", err))
+			log.Fatal(fmt.Errorf("decode-png-file %w", err))
 		}
-		fileData.WhitePercentage = float32(characterColorWeight(xp)*100) / float32(maxColorValue)
+		xp := pixelextract.ExtractPixelFromImg(img)
+		fileData.GrayPercentage = float32(characterColorWeight(xp)*100) / float32(maxColorValue)
 		characterWeight = append(characterWeight, fileData)
 	}
-	sort.Sort(byWhitePercentage(characterWeight))
+	sort.Sort(byGrayPercentage(characterWeight))
 
 	fileBody, err := json.Marshal(CharacterInfo{
 		StrBase:       s,
@@ -101,45 +144,42 @@ func CharacterPixelTypeCountMakeFile(s string) {
 	outFile.Close()
 }
 
-func makeCharanterImg(basePath string, alias string, char string, width int, height int) (string, error) {
-	finalImgName := basePath + alias + "_" + char + ".png"
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	x, y := 2, 10
-	col := color.Black
+func CharacterScaleTxtFile(fi *imagefilter.FilterImg, id int, chartInfo CharacterInfo) string {
+	var currentY int = -1
+	outFile, _ := os.Create(fi.GetAlias() + "_character.txt")
+	s := time.Now()
+	for _, p := range fi.GetXp() {
+		pixelGrayScaleWight := p.ColorGrayScale()
+		charLent := len(chartInfo.CharacterData)
+		colorRageIndex := float32(pixelGrayScaleWight*uint32(charLent-1)) / float32(MAX_COLOR_VALUE)
+		charIndex := int(colorRageIndex)
 
-	point := fixed.Point26_6{X: fixed.Int26_6(x * 64), Y: fixed.Int26_6(y * 64)}
-
-	d := &font.Drawer{
-		Dst:  img,
-		Src:  image.NewUniform(col),
-		Face: basicfont.Face7x13,
-		Dot:  point,
+		if charIndex >= charLent {
+			err := fmt.Errorf("charIndex: %d, not fount in characterData", charIndex)
+			log.Fatal(err)
+			fi.AddLog(err.Error())
+		}
+		defaultSpace := ""
+		currentValue := defaultSpace + chartInfo.CharacterData[charIndex].Char + defaultSpace
+		if currentY != p.Y {
+			currentY = p.Y
+			if _, err := outFile.Write([]byte("\n" + currentValue)); err != nil {
+				log.Fatal(err)
+				fi.AddLog(err.Error())
+			}
+			continue
+		}
+		if _, err := outFile.Write([]byte(currentValue)); err != nil {
+			log.Fatal(err)
+			fi.AddLog(err.Error())
+		}
 	}
-	d.DrawString(char)
-
-	f, err := os.Create(finalImgName)
+	outFile.Close()
+	e := time.Since(s)
+	fi.AddLog(fmt.Sprintf("character-scale, task: %d total create txt => %v", id, e))
+	path, err := os.Getwd()
 	if err != nil {
-		return "", err
+		fi.AddLog(fmt.Sprintf("character-scale, task: %d error %v", id, err))
 	}
-	defer f.Close()
-	if err := png.Encode(f, img); err != nil {
-		return "", err
-	}
-	return finalImgName, nil
-}
-
-func characterColorGrayScaleWeight(xp []pixelextract.PixelColor) uint32 {
-	var weight uint32
-	for _, p := range xp {
-		weight += p.ColorGrayScaleWeight()
-	}
-	return weight
-}
-
-func characterColorWeight(xp []pixelextract.PixelColor) uint32 {
-	var weight uint32
-	for _, p := range xp {
-		weight += p.ColorWeight()
-	}
-	return weight
+	return filepath.Join(path, outFile.Name())
 }
