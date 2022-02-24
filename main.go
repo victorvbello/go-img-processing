@@ -14,6 +14,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/victorvbello/img-processing/experiment"
 	"github.com/victorvbello/img-processing/imagefilter"
+	"github.com/victorvbello/img-processing/imagetransforms"
 	"github.com/victorvbello/img-processing/pixelextract"
 )
 
@@ -25,21 +26,37 @@ const (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	app := &cli.App{
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "alias",
+				Aliases:  []string{"a"},
+				Usage:    "Alias of file",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "file",
+				Aliases:  []string{"f"},
+				Usage:    "Original file path",
+				Required: true,
+			},
+		},
 		Commands: []*cli.Command{
 			{
 				Name:  "all",
 				Usage: "Make new images using al filters",
 				Action: func(c *cli.Context) error {
 					s := time.Now()
-					fmt.Println("----ALL INIT----")
-					byteImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
-					characterImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
-					grayScaleImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
-					randomColorImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
-					randomColorRedImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
-					randomColorGreenImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
-					randomColorBlueImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
-					fmt.Println("----ALL END----", time.Since(s))
+					log.Println("----ALL INIT----")
+					alias := c.String("alias")
+					inputFile := c.String("file")
+					byteImgProcessing(alias, inputFile)
+					characterImgProcessing(alias, inputFile)
+					grayScaleImgProcessing(alias, inputFile)
+					randomColorImgProcessing(alias, inputFile)
+					randomColorRedImgProcessing(alias, inputFile)
+					randomColorGreenImgProcessing(alias, inputFile)
+					randomColorBlueImgProcessing(alias, inputFile)
+					log.Println("----ALL END----", time.Since(s))
 					return nil
 				},
 			},
@@ -52,10 +69,32 @@ func main() {
 				},
 			},
 			{
+				Name:  "infinite",
+				Usage: "Mane new img infinite",
+				Action: func(c *cli.Context) error {
+					alias := c.String("alias")
+					inputFile := c.String("file")
+					infiniteImgProcessing(alias, inputFile)
+					return nil
+				},
+			},
+			{
+				Name:  "infinite-spiral",
+				Usage: "Mane new img infinite spiral",
+				Action: func(c *cli.Context) error {
+					alias := c.String("alias")
+					inputFile := c.String("file")
+					infiniteSpiralImgProcessing(alias, inputFile)
+					return nil
+				},
+			},
+			{
 				Name:  "byte",
 				Usage: "Make new img using a byte filter",
 				Action: func(c *cli.Context) error {
-					byteImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
+					alias := c.String("alias")
+					inputFile := c.String("file")
+					byteImgProcessing(alias, inputFile)
 					return nil
 				},
 			},
@@ -63,7 +102,9 @@ func main() {
 				Name:  "character-pixel-color-replace",
 				Usage: "Character pixel color replace",
 				Action: func(c *cli.Context) error {
-					characterImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
+					alias := c.String("alias")
+					inputFile := c.String("file")
+					characterImgProcessing(alias, inputFile)
 					return nil
 				},
 			},
@@ -71,7 +112,9 @@ func main() {
 				Name:  "grayscale",
 				Usage: "Make new img using a greyScale filter",
 				Action: func(c *cli.Context) error {
-					grayScaleImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
+					alias := c.String("alias")
+					inputFile := c.String("file")
+					grayScaleImgProcessing(alias, inputFile)
 					return nil
 				},
 			},
@@ -79,7 +122,9 @@ func main() {
 				Name:  "random-color",
 				Usage: "Make new img using a randomColor filter",
 				Action: func(c *cli.Context) error {
-					randomColorImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
+					alias := c.String("alias")
+					inputFile := c.String("file")
+					randomColorImgProcessing(alias, inputFile)
 					return nil
 				},
 			},
@@ -87,7 +132,9 @@ func main() {
 				Name:  "random-color-red",
 				Usage: "Make new img using a random color red filter",
 				Action: func(c *cli.Context) error {
-					randomColorRedImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
+					alias := c.String("alias")
+					inputFile := c.String("file")
+					randomColorRedImgProcessing(alias, inputFile)
 					return nil
 				},
 			},
@@ -95,7 +142,9 @@ func main() {
 				Name:  "random-color-green",
 				Usage: "Make new img using a random color gree filter",
 				Action: func(c *cli.Context) error {
-					randomColorGreenImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
+					alias := c.String("alias")
+					inputFile := c.String("file")
+					randomColorGreenImgProcessing(alias, inputFile)
 					return nil
 				},
 			},
@@ -103,7 +152,9 @@ func main() {
 				Name:  "random-color-blue",
 				Usage: "Make new img using a random color blue filter",
 				Action: func(c *cli.Context) error {
-					randomColorBlueImgProcessing("rhino_art", INPUT_DIR+"rhino.jpg")
+					alias := c.String("alias")
+					inputFile := c.String("file")
+					randomColorBlueImgProcessing(alias, inputFile)
 					return nil
 				},
 			},
@@ -119,26 +170,30 @@ func main() {
 func byteImgProcessing(alias string, imgFile string) {
 	var wg sync.WaitGroup
 	fileProcessFlag := "byte"
-	fmt.Println("process", fileProcessFlag)
+	log.Println("process", fileProcessFlag)
 	s := time.Now()
 	img, err := imagefilter.DecodeImg(imgFile)
 	if err != nil {
 		log.Fatal(fmt.Errorf("decode-file %w", err))
 	}
 	xp := pixelextract.ExtractPixelFromImg(img)
-	fmt.Println("total open ", time.Since(s))
+	log.Println("total open ", time.Since(s))
 
 	c := make(chan string)
 
 	t := 2
 
 	filterImg := imagefilter.NewFilterImg(alias, img, xp, 0, c)
-
 	for i := 1; i < t; i++ {
 		wg.Add(1)
 		go func(id int) {
+			sr := time.Now()
+			newImg := imagetransforms.Resize(filterImg, 85)
+			filterImg.AddLog(fmt.Sprintf("resize, task: %d total resize => %v", id, time.Since(sr).String()))
+			newXp := pixelextract.ExtractPixelFromImg(newImg)
 			ss := time.Now()
-			txtFileName := filterImg.Resize(id, 85).ByteScaleTxtFile(id)
+			filterImg.SetXp(newXp)
+			txtFileName := filterImg.ByteScaleTxtFile(id)
 			img, err := filterImg.MakeFromTxtFile(txtFileName)
 			if err != nil {
 				filterImg.AddLog("Error txt to img " + err.Error())
@@ -146,6 +201,7 @@ func byteImgProcessing(alias string, imgFile string) {
 			_, err = imagefilter.EncodeIMG(img, OUTPUT_DIR+alias+"/"+alias+"_"+fileProcessFlag+filepath.Ext(imgFile))
 			if err != nil {
 				filterImg.AddLog("Error encode img " + err.Error())
+				return
 			}
 			filterImg.AddLog("total process " + time.Since(ss).String())
 			wg.Done()
@@ -165,14 +221,14 @@ func byteImgProcessing(alias string, imgFile string) {
 func grayScaleImgProcessing(alias string, imgFile string) {
 	var wg sync.WaitGroup
 	fileProcessFlag := "grayscale"
-	fmt.Println("process", fileProcessFlag)
+	log.Println("process", fileProcessFlag)
 	s := time.Now()
 	img, err := imagefilter.DecodeImg(imgFile)
 	if err != nil {
 		log.Fatal(fmt.Errorf("decode-file %w", err))
 	}
 	xp := pixelextract.ExtractPixelFromImg(img)
-	fmt.Println("total open ", time.Since(s))
+	log.Println("total open ", time.Since(s))
 
 	c := make(chan string)
 
@@ -188,6 +244,7 @@ func grayScaleImgProcessing(alias string, imgFile string) {
 			_, err = imagefilter.EncodeIMG(img, OUTPUT_DIR+alias+"/"+alias+"_"+fileProcessFlag+filepath.Ext(imgFile))
 			if err != nil {
 				filterImg.AddLog("Error encode img " + err.Error())
+				return
 			}
 			filterImg.AddLog("total process " + time.Since(ss).String())
 			wg.Done()
@@ -207,7 +264,7 @@ func grayScaleImgProcessing(alias string, imgFile string) {
 func characterImgProcessing(alias string, imgFile string) {
 	var wg sync.WaitGroup
 	fileProcessFlag := "character"
-	fmt.Println("process", fileProcessFlag)
+	log.Println("process", fileProcessFlag)
 	sw := time.Now()
 	jsonCharWeight, err := os.Open("./files/unpublished/matrix/charts_weight.txt")
 	if err != nil {
@@ -223,7 +280,7 @@ func characterImgProcessing(alias string, imgFile string) {
 		log.Fatal(fmt.Errorf("json-unmarshal-weight %w", err))
 	}
 	jsonCharWeight.Close()
-	fmt.Println("total open charts_weight file", time.Since(sw))
+	log.Println("total open charts_weight file", time.Since(sw))
 
 	s := time.Now()
 
@@ -232,19 +289,24 @@ func characterImgProcessing(alias string, imgFile string) {
 		log.Fatal(fmt.Errorf("decode-file %w", err))
 	}
 	xp := pixelextract.ExtractPixelFromImg(img)
-	fmt.Println("total open ", time.Since(s))
+	log.Println("total open ", time.Since(s))
 
 	c := make(chan string)
 
 	t := 2
 
 	filterImg := imagefilter.NewFilterImg(alias, img, xp, 0, c)
-	filterImg.Transparency(2)
+	newImg := imagetransforms.Transparency(filterImg, 2)
 	for i := 1; i < t; i++ {
 		wg.Add(1)
 		go func(id int) {
+			sr := time.Now()
+			newImg := imagetransforms.Resize(newImg, 85)
+			newXp := pixelextract.ExtractPixelFromImg(newImg)
+			filterImg.AddLog(fmt.Sprintf("resize, task: %d total resize => %v", id, time.Since(sr).String()))
 			ss := time.Now()
-			txtFileName := experiment.CharacterScaleTxtFile(filterImg.Resize(id, 85), id, charInfo)
+			filterImg.SetXp(newXp)
+			txtFileName := experiment.CharacterScaleTxtFile(filterImg, id, charInfo)
 			img, err := filterImg.MakeFromTxtFile(txtFileName)
 			if err != nil {
 				filterImg.AddLog("Error txt to img " + err.Error())
@@ -253,6 +315,7 @@ func characterImgProcessing(alias string, imgFile string) {
 			_, err = imagefilter.EncodeIMG(img, OUTPUT_DIR+alias+"/"+alias+"_"+fileProcessFlag+filepath.Ext(imgFile))
 			if err != nil {
 				filterImg.AddLog("Error encode img " + err.Error())
+				return
 			}
 			filterImg.AddLog("total process " + time.Since(ss).String())
 			wg.Done()
@@ -272,14 +335,14 @@ func characterImgProcessing(alias string, imgFile string) {
 func randomColorImgProcessing(alias string, imgFile string) {
 	var wg sync.WaitGroup
 	fileProcessFlag := "random_color"
-	fmt.Println("process", fileProcessFlag)
+	log.Println("process", fileProcessFlag)
 	s := time.Now()
 	img, err := imagefilter.DecodeImg(imgFile)
 	if err != nil {
 		log.Fatal(fmt.Errorf("decode-file %w", err))
 	}
 	xp := pixelextract.ExtractPixelFromImg(img)
-	fmt.Println("total open ", time.Since(s))
+	log.Println("total open ", time.Since(s))
 
 	c := make(chan string)
 
@@ -290,13 +353,14 @@ func randomColorImgProcessing(alias string, imgFile string) {
 	for i := 1; i < t; i++ {
 		wg.Add(1)
 		go func(id int) {
-			filterImg.Factor = uint32(rand.Intn(255))
+			filterImg.Factor = uint8(rand.Intn(255))
 			filterImg.AddLog(fmt.Sprintf("factor %d", filterImg.Factor))
 			ss := time.Now()
 			img := filterImg.RandomColor(id)
 			_, err = imagefilter.EncodeIMG(img, OUTPUT_DIR+alias+"/"+alias+"_"+fileProcessFlag+filepath.Ext(imgFile))
 			if err != nil {
 				filterImg.AddLog("Error encode img " + err.Error())
+				return
 			}
 			filterImg.AddLog("total process " + time.Since(ss).String())
 			wg.Done()
@@ -316,14 +380,14 @@ func randomColorImgProcessing(alias string, imgFile string) {
 func randomColorRedImgProcessing(alias string, imgFile string) {
 	var wg sync.WaitGroup
 	fileProcessFlag := "random_color_red"
-	fmt.Println("process", fileProcessFlag)
+	log.Println("process", fileProcessFlag)
 	s := time.Now()
 	img, err := imagefilter.DecodeImg(imgFile)
 	if err != nil {
 		log.Fatal(fmt.Errorf("decode-file %w", err))
 	}
 	xp := pixelextract.ExtractPixelFromImg(img)
-	fmt.Println("total open ", time.Since(s))
+	log.Println("total open ", time.Since(s))
 
 	c := make(chan string)
 
@@ -334,13 +398,14 @@ func randomColorRedImgProcessing(alias string, imgFile string) {
 	for i := 1; i < t; i++ {
 		wg.Add(1)
 		go func(id int) {
-			filterImg.Factor = uint32(rand.Intn(255))
+			filterImg.Factor = uint8(rand.Intn(255))
 			filterImg.AddLog(fmt.Sprintf("factor %d", filterImg.Factor))
 			ss := time.Now()
 			img := filterImg.RandomRed(id)
 			_, err = imagefilter.EncodeIMG(img, OUTPUT_DIR+alias+"/"+alias+"_"+fileProcessFlag+filepath.Ext(imgFile))
 			if err != nil {
 				filterImg.AddLog("Error encode img " + err.Error())
+				return
 			}
 			filterImg.AddLog("total process " + time.Since(ss).String())
 			wg.Done()
@@ -360,14 +425,14 @@ func randomColorRedImgProcessing(alias string, imgFile string) {
 func randomColorBlueImgProcessing(alias string, imgFile string) {
 	var wg sync.WaitGroup
 	fileProcessFlag := "random_color_blue"
-	fmt.Println("process", fileProcessFlag)
+	log.Println("process", fileProcessFlag)
 	s := time.Now()
 	img, err := imagefilter.DecodeImg(imgFile)
 	if err != nil {
 		log.Fatal(fmt.Errorf("decode-file %w", err))
 	}
 	xp := pixelextract.ExtractPixelFromImg(img)
-	fmt.Println("total open ", time.Since(s))
+	log.Println("total open ", time.Since(s))
 
 	c := make(chan string)
 
@@ -378,13 +443,14 @@ func randomColorBlueImgProcessing(alias string, imgFile string) {
 	for i := 1; i < t; i++ {
 		wg.Add(1)
 		go func(id int) {
-			filterImg.Factor = uint32(rand.Intn(255))
+			filterImg.Factor = uint8(rand.Intn(255))
 			filterImg.AddLog(fmt.Sprintf("factor %d", filterImg.Factor))
 			ss := time.Now()
 			img := filterImg.RandomBlue(id)
 			_, err = imagefilter.EncodeIMG(img, OUTPUT_DIR+alias+"/"+alias+"_"+fileProcessFlag+filepath.Ext(imgFile))
 			if err != nil {
 				filterImg.AddLog("Error encode img " + err.Error())
+				return
 			}
 			filterImg.AddLog("total process " + time.Since(ss).String())
 			wg.Done()
@@ -400,17 +466,18 @@ func randomColorBlueImgProcessing(alias string, imgFile string) {
 		fmt.Printf("\t%s\n", l)
 	}
 }
+
 func randomColorGreenImgProcessing(alias string, imgFile string) {
 	var wg sync.WaitGroup
 	fileProcessFlag := "random_color_green"
-	fmt.Println("process", fileProcessFlag)
+	log.Println("process", fileProcessFlag)
 	s := time.Now()
 	img, err := imagefilter.DecodeImg(imgFile)
 	if err != nil {
 		log.Fatal(fmt.Errorf("decode-file %w", err))
 	}
 	xp := pixelextract.ExtractPixelFromImg(img)
-	fmt.Println("total open ", time.Since(s))
+	log.Println("total open ", time.Since(s))
 
 	c := make(chan string)
 
@@ -421,15 +488,97 @@ func randomColorGreenImgProcessing(alias string, imgFile string) {
 	for i := 1; i < t; i++ {
 		wg.Add(1)
 		go func(id int) {
-			filterImg.Factor = uint32(rand.Intn(255))
+			filterImg.Factor = uint8(rand.Intn(255))
 			filterImg.AddLog(fmt.Sprintf("factor %d", filterImg.Factor))
 			ss := time.Now()
 			img := filterImg.RandomGreen(id)
 			_, err = imagefilter.EncodeIMG(img, OUTPUT_DIR+alias+"/"+alias+"_"+fileProcessFlag+filepath.Ext(imgFile))
 			if err != nil {
 				filterImg.AddLog("Error encode img " + err.Error())
+				return
 			}
 			filterImg.AddLog("total process " + time.Since(ss).String())
+			wg.Done()
+		}(i)
+	}
+
+	go func() {
+		wg.Wait()
+		close(c)
+	}()
+
+	for l := range c {
+		fmt.Printf("\t%s\n", l)
+	}
+}
+
+func infiniteImgProcessing(alias string, imgFile string) {
+	var wg sync.WaitGroup
+	fileProcessFlag := "infinite"
+	log.Println("process", fileProcessFlag)
+	s := time.Now()
+	img, err := imagefilter.DecodeImg(imgFile)
+	if err != nil {
+		log.Fatal(fmt.Errorf("decode-file %w", err))
+	}
+	log.Println("total open ", time.Since(s))
+
+	c := make(chan string)
+
+	t := 2
+
+	for i := 1; i < t; i++ {
+		wg.Add(1)
+		go func(id int) {
+			ss := time.Now()
+			newImg := experiment.ImgInfinite(img, 5)
+			c <- fmt.Sprintf("percentage %d", 5)
+			_, err = imagefilter.EncodeIMG(newImg, OUTPUT_DIR+alias+"/"+alias+"_"+fileProcessFlag+filepath.Ext(imgFile))
+			if err != nil {
+				c <- "Error encode img " + err.Error()
+				return
+			}
+			c <- "total process " + time.Since(ss).String()
+			wg.Done()
+		}(i)
+	}
+
+	go func() {
+		wg.Wait()
+		close(c)
+	}()
+
+	for l := range c {
+		fmt.Printf("\t%s\n", l)
+	}
+}
+
+func infiniteSpiralImgProcessing(alias string, imgFile string) {
+	var wg sync.WaitGroup
+	fileProcessFlag := "infinite_spiral"
+	log.Println("process", fileProcessFlag)
+	s := time.Now()
+	img, err := imagefilter.DecodeImg(imgFile)
+	if err != nil {
+		log.Fatal(fmt.Errorf("decode-file %w", err))
+	}
+	log.Println("total open ", time.Since(s))
+
+	c := make(chan string)
+
+	t := 2
+
+	for i := 1; i < t; i++ {
+		wg.Add(1)
+		go func(id int) {
+			ss := time.Now()
+			newImg := experiment.ImgInfiniteSpiral(img, 5)
+			_, err = imagefilter.EncodeIMG(newImg, fmt.Sprintf("%s%s/%s_%s%s", OUTPUT_DIR, alias, alias, fileProcessFlag, ".png"))
+			if err != nil {
+				c <- "Error encode img " + err.Error()
+				return
+			}
+			c <- "total process " + time.Since(ss).String()
 			wg.Done()
 		}(i)
 	}

@@ -3,7 +3,6 @@ module github.com/victorvbello/img-processing
 go 1.17
 
 require (
-	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/urfave/cli/v2 v2.3.0
 	golang.org/x/image v0.0.0-20211028202545-6944b10bf410
 	gopkg.in/go-playground/colors.v1 v1.2.0

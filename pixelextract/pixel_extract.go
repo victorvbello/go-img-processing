@@ -8,11 +8,12 @@ import (
 )
 
 type PixelColor struct {
-	X         int
-	Y         int
-	IsDark    bool
-	IsLight   bool
-	ColorRGBA color.RGBA
+	X             int
+	Y             int
+	IsDark        bool
+	IsLight       bool
+	OriginalColor color.Color
+	ColorRGBA     color.RGBA
 }
 
 func (p PixelColor) ColorWeight() uint32 {
@@ -38,14 +39,15 @@ func ExtractPixelFromImg(img image.Image) []PixelColor {
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			pColor := img.At(x, y)
-			cr, cg, cb, ca := pColor.RGBA()
 			RGBAColor := colors.FromStdColor(pColor)
+			originalRGBA := color.RGBAModel.Convert(pColor).(color.RGBA)
 			xp = append(xp, PixelColor{
-				X:         x,
-				Y:         y,
-				ColorRGBA: color.RGBA{uint8(cr), uint8(cg), uint8(cb), uint8(ca)},
-				IsDark:    RGBAColor.IsDark(),
-				IsLight:   RGBAColor.IsLight(),
+				X:             x,
+				Y:             y,
+				IsDark:        RGBAColor.IsDark(),
+				IsLight:       RGBAColor.IsLight(),
+				OriginalColor: pColor,
+				ColorRGBA:     originalRGBA,
 			})
 		}
 	}

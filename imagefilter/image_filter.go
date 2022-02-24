@@ -7,12 +7,10 @@ import (
 	"image/color"
 	"image/draw"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/nfnt/resize"
 	"github.com/victorvbello/img-processing/pixelextract"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/inconsolata"
@@ -24,15 +22,15 @@ type FilterImg struct {
 	image.Image
 	custom map[image.Point]color.Color
 	xp     []pixelextract.PixelColor
-	Factor uint32
+	Factor uint8
 	log    chan<- string
 }
 
-func changeColorRgba(r, g, b, a, f uint32) color.RGBA {
-	var safeR uint32 = 0
-	var safeG uint32 = 0
-	var safeB uint32 = 0
-	var safeA uint32 = 0
+func changeColorRgba(r, g, b, a, f uint8) color.RGBA {
+	var safeR uint8 = 0
+	var safeG uint8 = 0
+	var safeB uint8 = 0
+	var safeA uint8 = 0
 	if r == 0 {
 		safeR = 255
 	}
@@ -54,10 +52,10 @@ func changeColorRgba(r, g, b, a, f uint32) color.RGBA {
 	if newA := a - f; newA > 0 {
 		safeA = newA
 	}
-	return color.RGBA{uint8(safeR), uint8(safeG), uint8(safeB), uint8(safeA)}
+	return color.RGBA{safeR, safeG, safeB, safeA}
 }
 
-func NewFilterImg(a string, img image.Image, xp []pixelextract.PixelColor, f uint32, log chan<- string) *FilterImg {
+func NewFilterImg(a string, img image.Image, xp []pixelextract.PixelColor, f uint8, log chan<- string) *FilterImg {
 	return &FilterImg{a, img, map[image.Point]color.Color{}, xp, f, log}
 }
 
@@ -80,14 +78,24 @@ func (fi *FilterImg) GetXp() []pixelextract.PixelColor {
 	return fi.xp
 }
 
+func (fi *FilterImg) SetXp(nXp []pixelextract.PixelColor) {
+	fi.xp = nXp
+}
+
+func (fi *FilterImg) SetImg(nImg image.Image) {
+	fi.Image = nImg
+}
+
 func (fi *FilterImg) AddLog(l string) {
 	fi.log <- l
 }
 
 func (fi *FilterImg) RandomColor(id int) image.Image {
 	for _, p := range fi.xp {
-		cr, cg, cb, ca := p.ColorRGBA.RGBA()
-		fi.Set(p.X, p.Y, changeColorRgba(cr, cg, cb, ca, fi.Factor))
+		original, ok := color.RGBAModel.Convert(p.OriginalColor).(color.RGBA)
+		if ok {
+			fi.Set(p.X, p.Y, changeColorRgba(original.A, original.B, original.G, original.A, fi.Factor))
+		}
 	}
 
 	return fi
@@ -95,9 +103,8 @@ func (fi *FilterImg) RandomColor(id int) image.Image {
 
 func (fi *FilterImg) RandomRed(id int) image.Image {
 	for _, p := range fi.xp {
-		_, cg, cb, ca := p.ColorRGBA.RGBA()
 		if (p.X+p.Y)%2 == 0 {
-			fi.Set(p.X, p.Y, changeColorRgba(0, cg, cb, ca, fi.Factor))
+			fi.Set(p.X, p.Y, changeColorRgba(0, p.ColorRGBA.G, p.ColorRGBA.B, p.ColorRGBA.A, fi.Factor))
 		}
 	}
 
@@ -106,9 +113,8 @@ func (fi *FilterImg) RandomRed(id int) image.Image {
 
 func (fi *FilterImg) RandomGreen(id int) image.Image {
 	for _, p := range fi.xp {
-		cr, _, cb, ca := p.ColorRGBA.RGBA()
 		if (p.X+p.Y)%2 == 0 {
-			fi.Set(p.X, p.Y, changeColorRgba(cr, 0, cb, ca, fi.Factor))
+			fi.Set(p.X, p.Y, changeColorRgba(p.ColorRGBA.R, 0, p.ColorRGBA.B, p.ColorRGBA.A, fi.Factor))
 		}
 	}
 
@@ -117,9 +123,8 @@ func (fi *FilterImg) RandomGreen(id int) image.Image {
 
 func (fi *FilterImg) RandomBlue(id int) image.Image {
 	for _, p := range fi.xp {
-		cr, cg, _, ca := p.ColorRGBA.RGBA()
 		if (p.X+p.Y)%2 == 0 {
-			fi.Set(p.X, p.Y, changeColorRgba(cr, cg, 0, ca, fi.Factor))
+			fi.Set(p.X, p.Y, changeColorRgba(p.ColorRGBA.R, p.ColorRGBA.G, 0, p.ColorRGBA.A, fi.Factor))
 		}
 	}
 
@@ -128,9 +133,17 @@ func (fi *FilterImg) RandomBlue(id int) image.Image {
 
 func (fi *FilterImg) GreyScale(id int) image.Image {
 	for _, p := range fi.xp {
-		cr, cg, cb, _ := p.ColorRGBA.RGBA()
-		avg := 0.2125*float64(cr) + 0.7154*float64(cg) + 0.0721*float64(cb)
-		grayColor := color.Gray{uint8(math.Ceil(avg))}
+		originalColor, ok := color.RGBAModel.Convert(p.OriginalColor).(color.RGBA)
+		if !ok {
+			fmt.Println("type conversion went wrong")
+		}
+		grey := uint8(float64(originalColor.R)*0.21 + float64(originalColor.G)*0.72 + float64(originalColor.B)*0.07)
+		grayColor := color.RGBA{
+			grey,
+			grey,
+			grey,
+			originalColor.A,
+		}
 		fi.Set(p.X, p.Y, grayColor)
 	}
 	return fi
@@ -168,19 +181,6 @@ func (fi *FilterImg) ByteScaleTxtFile(id int) string {
 	return filepath.Join(path, outFile.Name())
 }
 
-func (fi *FilterImg) Resize(id int, scale uint) *FilterImg {
-	bounds := fi.Bounds()
-	width := uint(bounds.Max.X)
-	newWidth := width - (scale*width)/100
-	s := time.Now()
-	newImg := resize.Resize(newWidth, 0, fi, resize.Lanczos3)
-	newXp := pixelextract.ExtractPixelFromImg(newImg)
-	newFi := NewFilterImg(fi.alias, newImg, newXp, fi.Factor, fi.log)
-	e := time.Since(s)
-	fi.log <- fmt.Sprintf("resize, task: %d total resize => %v", id, e)
-	return newFi
-}
-
 func (fi *FilterImg) MakeFromTxtFile(txtFilePath string) (image.Image, error) {
 	bounds := fi.Bounds()
 	width, height := bounds.Max.X, bounds.Max.Y
@@ -216,22 +216,4 @@ func (fi *FilterImg) MakeFromTxtFile(txtFilePath string) (image.Image, error) {
 		return nil, err
 	}
 	return img, nil
-}
-
-func (fi *FilterImg) Transparency(alpha uint8) image.Image {
-	bounds := fi.Bounds()
-	width, height := bounds.Max.X, bounds.Max.Y
-	resultImg := image.NewRGBA(bounds)
-	mask := image.NewAlpha(bounds)
-	bg := image.NewRGBA(bounds)
-	for x := 0; x < width; x++ {
-		for y := 0; y < height; y++ {
-			bg.Set(x, y, image.White)
-			mask.SetAlpha(x, y, color.Alpha{alpha})
-		}
-	}
-	draw.Draw(resultImg, bounds, bg, image.ZP, draw.Src)
-	draw.DrawMask(resultImg, bounds, fi, image.ZP, mask, image.ZP, draw.Over)
-	fi.Image = resultImg
-	return resultImg
 }
